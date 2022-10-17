@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 20)
 include_directories(.)
 
 add_executable(univ3_1_OS_lab1
-        src/compfuncs.hpp
+        main.cpp
         #test.cpp
-        src/trialfuncs.hpp main.cpp)
+        Manager.hpp
+        Computation.hpp
+        src/compfuncs.hpp
+        src/trialfuncs.hpp)

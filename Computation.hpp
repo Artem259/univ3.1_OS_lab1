@@ -12,7 +12,10 @@ private:
     std::variant<HARD_FAIL, SOFT_FAIL, int> result;
 
     void computeResult() {
-        result = os::lab1::compfuncs::trial_f<os::lab1::compfuncs::INT_SUM>(x);
+        if (func == 'f')
+            result = os::lab1::compfuncs::trial_f<os::lab1::compfuncs::INT_SUM>(x);
+        else // func == 'g'
+            result = os::lab1::compfuncs::trial_g<os::lab1::compfuncs::INT_SUM>(x);
     }
 
     void connectToNamedPipe() {
@@ -21,7 +24,7 @@ private:
 
         pipe = CreateFile(
                 c_pipeName,
-                GENERIC_READ | GENERIC_WRITE,
+                GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 nullptr,
                 OPEN_EXISTING,
@@ -29,7 +32,8 @@ private:
                 nullptr
         );
         if (pipe == INVALID_HANDLE_VALUE) {
-            throw std::runtime_error("Failed to connect to pipe.");
+            std::cerr << "[C] Failed to connect to pipe.\n";
+            throw std::runtime_error("");
         }
     }
 
@@ -43,7 +47,8 @@ private:
                 nullptr // not using overlapped IO
         );
         if (!flag) {
-            throw std::runtime_error("Failed to send data.");
+            std::cerr << "[C] Failed to send data.\n";
+            throw std::runtime_error("");
         }
     }
 
@@ -52,8 +57,11 @@ private:
     }
 public:
     explicit Computation(char func, int x) : func(func), x(x) {
-        if (func != 'f' && func != 'g')
-            throw std::runtime_error("Unexpected computation function.");
+        if (func != 'f' && func != 'g') {
+            std::cerr << "[C] Unexpected computation function.\n";
+            throw std::runtime_error("");
+        }
+
         pipe = nullptr;
     }
 
