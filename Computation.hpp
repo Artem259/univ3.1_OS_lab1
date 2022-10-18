@@ -1,8 +1,9 @@
 #ifndef COMPUTATION_HPP
 #define COMPUTATION_HPP
 
-using HARD_FAIL = os::lab1::compfuncs::hard_fail;
-using SOFT_FAIL = os::lab1::compfuncs::soft_fail;
+#include "Service.hpp"
+#include "src/compfuncs.hpp"
+#include "src/trialfuncs.hpp"
 
 class Computation {
 private:
@@ -16,25 +17,6 @@ private:
             result = os::lab1::compfuncs::trial_f<os::lab1::compfuncs::INT_SUM>(x);
         else // func == 'g'
             result = os::lab1::compfuncs::trial_g<os::lab1::compfuncs::INT_SUM>(x);
-    }
-
-    void connectToNamedPipe() {
-        std::string pipeName = std::string(R"(\\.\pipe\pipe_)") + func;
-        char* c_pipeName = const_cast<char*>(pipeName.c_str());
-
-        pipe = CreateFile(
-                c_pipeName,
-                GENERIC_WRITE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                nullptr,
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
-                nullptr
-        );
-        if (pipe == INVALID_HANDLE_VALUE) {
-            std::cerr << "[C] Failed to connect to pipe.\n";
-            throw std::runtime_error("");
-        }
     }
 
     void sendResultToNamedPipe() {
@@ -63,6 +45,25 @@ public:
         }
 
         pipe = nullptr;
+    }
+
+    void connectToNamedPipe() {
+        std::string pipeName = std::string(R"(\\.\pipe\pipe_)") + func;
+        char* c_pipeName = const_cast<char*>(pipeName.c_str());
+
+        pipe = CreateFile(
+                c_pipeName,
+                GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                nullptr,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                nullptr
+        );
+        if (pipe == INVALID_HANDLE_VALUE) {
+            std::cerr << "[C] Failed to connect to pipe.\n";
+            throw std::runtime_error("");
+        }
     }
 
     void run() {

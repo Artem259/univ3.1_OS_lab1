@@ -4,18 +4,20 @@
 #include <stdexcept>
 #include <future>
 #include "Windows.h"
+#include "Service.hpp"
+#include "Computation.hpp"
 #include "src/compfuncs.hpp"
 #include "src/trialfuncs.hpp"
-
-using HARD_FAIL = os::lab1::compfuncs::hard_fail;
-using SOFT_FAIL = os::lab1::compfuncs::soft_fail;
 
 class Manager {
 private:
     int x;
     std::string arg;
+    PROCESS_INFORMATION piF{}, piG{};
     HANDLE pipeF, pipeG;
     std::variant<HARD_FAIL, SOFT_FAIL, int> resF, resG;
+    int res;
+    std::atomic_bool isTerminated;
 
 
     void xInputRequest() {
@@ -57,7 +59,6 @@ private:
 
     void createProcesses() {
         STARTUPINFO siF, siG;
-        PROCESS_INFORMATION piF, piG;
 
         ZeroMemory(&siF, sizeof(siF));
         siF.cb = sizeof(siF);
@@ -76,7 +77,7 @@ private:
                             nullptr, // Process handle not inheritable
                             nullptr, // Thread handle not inheritable
                             false, // Set handle inheritance to FALSE
-                            0, // No creation flags
+                            0, // Flags //CREATE_NEW_CONSOLE
                             nullptr, // Use parent's environment block
                             nullptr, // Use parent's starting directory
                             &siF,  // Pointer to STARTUPINFO structure
@@ -91,7 +92,7 @@ private:
                             nullptr, // Process handle not inheritable
                             nullptr, // Thread handle not inheritable
                             false, // Set handle inheritance to FALSE
-                            0, // No creation flags
+                            0, // Flags //CREATE_NEW_CONSOLE
                             nullptr, // Use parent's environment block
                             nullptr, // Use parent's starting directory
                             &siG, // Pointer to STARTUPINFO structure
@@ -103,52 +104,105 @@ private:
         }
     }
 
-    static std::variant<HARD_FAIL, SOFT_FAIL, int> readResultFromNamedPipe(char func, HANDLE* pipe, std::mutex* m) {
-        BOOL result = ConnectNamedPipe(*pipe, nullptr);
-        if (!result) {
-            std::cerr << "[M] Failed to make connection on named pipe.\n";
-            throw std::runtime_error("");
+    static std::variant<HARD_FAIL, SOFT_FAIL, int> readResultFromNamedPipe(char func, Manager* manager, HANDLE* pipe, std::mutex* mx) {
+        ConnectNamedPipe(*pipe, nullptr);
+        if (!manager->isComputationTerminated()) {
+            std::variant<HARD_FAIL, SOFT_FAIL, int> data;
+            void* buffer = static_cast<void*>(&data);
+            bool flag = ReadFile(
+                    *pipe,
+                    buffer, // the data from the pipe will be put here
+                    sizeof(data), // number of bytes allocated
+                    nullptr, // number of bytes actually read
+                    nullptr // not using overlapped IO
+            );
+            if (!flag) {
+                std::cerr << "[M] Failed to read data from named pipe.\n";
+                throw std::runtime_error("");
+            }
+            auto* funcRes = static_cast<std::variant<HARD_FAIL, SOFT_FAIL, int>*>(buffer);
+            mx->lock();
+            std::cout << " -- f(" << func << "): " << *funcRes << "\n";
+            mx->unlock();
+            if (std::holds_alternative<HARD_FAIL>(*funcRes) || std::holds_alternative<SOFT_FAIL>(*funcRes)) { // TODO: SOFT_FAIL
+                manager->terminateProcessAndPipe(func == 'f' ? 'g' : 'f');
+            }
+            return *funcRes;
         }
-        std::variant<HARD_FAIL, SOFT_FAIL, int> data;
-        void* buffer = static_cast<void*>(&data);
-        bool flag = ReadFile(
-                *pipe,
-                buffer, // the data from the pipe will be put here
-                sizeof(data), // number of bytes allocated
-                nullptr, // number of bytes actually read
-                nullptr // not using overlapped IO
-        );
-        if (!flag) {
-            std::cerr << "[M] Failed to read data from named pipe.\n";
-            throw std::runtime_error("");
-        }
-        auto* res = static_cast<std::variant<os::lab1::compfuncs::hard_fail, os::lab1::compfuncs::soft_fail, int>*>(buffer);
-        m->lock();
-        std::cout << " -- f(" << func << "): " << *res << "\n";
-        m->unlock();
-        return *res;
+        return {};
     }
 
     void receiveResults() {
-        std::mutex m;
+        std::mutex mx;
+        isTerminated = false;
 
-        auto futureF = std::async(std::launch::async, readResultFromNamedPipe, 'f', &pipeF, &m);
-        auto futureG = std::async(std::launch::async, readResultFromNamedPipe, 'g', &pipeG, &m);
+        auto futureF = std::async(std::launch::async, readResultFromNamedPipe, 'f', this, &pipeF, &mx);
+        auto futureG = std::async(std::launch::async, readResultFromNamedPipe, 'g', this, &pipeG, &mx);
 
         resF = futureF.get();
         resG = futureG.get();
     }
 
-    void closeNamedPipes() {
+    void calculateFinalResult() {
+        if (holds_alternative<int>(resF) && holds_alternative<int>(resG)) {
+            res = std::get<int>(resF) + std::get<int>(resG);
+        }
+        else {
+            res = -2;
+        }
+
+        if (res != -2) {
+            std::cout << "  Result: " << res << "\n";
+        }
+        else {
+            std::cout << "  Result: <fail>\n";
+        }
+    }
+
+    void terminateProcessAndPipe(char forFunc) {
+        if (forFunc != 'f' && forFunc != 'g') {
+            std::cerr << "[M] Unexpected terminateProcessAndPipe() function parameter.\n";
+            throw std::runtime_error("");
+        }
+
+        isTerminated = true;
+        if (forFunc == 'f') {
+            TerminateProcess(piF.hProcess, 1);
+            Computation comp('f', -1);
+            comp.connectToNamedPipe();
+        }
+        else { // forFunc == 'g'
+            TerminateProcess(piG.hProcess, 1);
+            Computation comp('g', -1);
+            comp.connectToNamedPipe();
+        }
+
+    }
+
+    void closeHandles() {
         CloseHandle(pipeF);
+        CloseHandle(piF.hProcess);
+        CloseHandle(piF.hThread);
+
         CloseHandle(pipeG);
+        CloseHandle(piG.hProcess);
+        CloseHandle(piG.hThread);
     }
 
 public:
     explicit Manager(std::string arg) : arg(std::move(arg)) {
         x = 0;
+        piF = {};
+        piG = {};
         pipeF = nullptr;
         pipeG = nullptr;
+        res = -1;
+        isTerminated = false;
+    }
+
+
+    std::atomic_bool& isComputationTerminated() {
+        return isTerminated;
     }
 
     void run() {
@@ -156,7 +210,8 @@ public:
         createNamedPipes();
         createProcesses();
         receiveResults(); // resF, resG
-        closeNamedPipes();
+        calculateFinalResult();
+        closeHandles();
     }
 };
 
