@@ -19,34 +19,6 @@ private:
             result = os::lab1::compfuncs::trial_g<os::lab1::compfuncs::INT_SUM>(x);
     }
 
-    void sendResultToNamedPipe() {
-        void* resultVoid = static_cast<void*>(&result);
-        bool flag = WriteFile(
-                pipe, // handle to our outbound pipe
-                resultVoid, // data to send
-                sizeof(result), // size of data to send (bytes)
-                nullptr, // actual amount of data sent
-                nullptr // not using overlapped IO
-        );
-        if (!flag) {
-            std::cerr << "[C] Failed to send data.\n";
-            throw std::runtime_error("");
-        }
-    }
-
-    void closeNamedPipe() {
-        CloseHandle(pipe);
-    }
-public:
-    explicit Computation(char func, int x) : func(func), x(x) {
-        if (func != 'f' && func != 'g') {
-            std::cerr << "[C] Unexpected computation function.\n";
-            throw std::runtime_error("");
-        }
-
-        pipe = nullptr;
-    }
-
     void connectToNamedPipe() {
         std::string pipeName = std::string(R"(\\.\pipe\pipe_)") + func;
         char* c_pipeName = const_cast<char*>(pipeName.c_str());
@@ -61,9 +33,37 @@ public:
                 nullptr
         );
         if (pipe == INVALID_HANDLE_VALUE) {
-            std::cerr << "[C] Failed to connect to pipe.\n";
+            std::cerr << "[C] Failed to connect to pipe_" << func << ".\n";
             throw std::runtime_error("");
         }
+    }
+
+    void sendResultToNamedPipe() {
+        void* resultVoid = static_cast<void*>(&result);
+        bool flag = WriteFile(
+                pipe, // handle to our outbound pipe
+                resultVoid, // data to send
+                sizeof(result), // size of data to send (bytes)
+                nullptr, // actual amount of data sent
+                nullptr // not using overlapped IO
+        );
+        if (!flag) {
+            std::cerr << "[C] Failed to send data of " << func << "-function.\n";
+            throw std::runtime_error("");
+        }
+    }
+
+    void closeNamedPipe() {
+        CloseHandle(pipe);
+    }
+public:
+    explicit Computation(char func, int x) : func(func), x(x) {
+        if (func != 'f' && func != 'g') {
+            std::cerr << "[C] Unexpected computation function: " << func << ".\n";
+            throw std::runtime_error("");
+        }
+
+        pipe = nullptr;
     }
 
     void run() {

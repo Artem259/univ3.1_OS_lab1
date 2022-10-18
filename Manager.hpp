@@ -5,7 +5,6 @@
 #include <future>
 #include "Windows.h"
 #include "Service.hpp"
-#include "Computation.hpp"
 #include "src/compfuncs.hpp"
 #include "src/trialfuncs.hpp"
 
@@ -106,30 +105,33 @@ private:
 
     static std::variant<HARD_FAIL, SOFT_FAIL, int> readResultFromNamedPipe(char func, Manager* manager, HANDLE* pipe, std::mutex* mx) {
         ConnectNamedPipe(*pipe, nullptr);
-        if (!manager->isComputationTerminated()) {
-            std::variant<HARD_FAIL, SOFT_FAIL, int> data;
-            void* buffer = static_cast<void*>(&data);
-            bool flag = ReadFile(
-                    *pipe,
-                    buffer, // the data from the pipe will be put here
-                    sizeof(data), // number of bytes allocated
-                    nullptr, // number of bytes actually read
-                    nullptr // not using overlapped IO
-            );
-            if (!flag) {
-                std::cerr << "[M] Failed to read data from named pipe.\n";
-                throw std::runtime_error("");
-            }
-            auto* funcRes = static_cast<std::variant<HARD_FAIL, SOFT_FAIL, int>*>(buffer);
-            mx->lock();
-            std::cout << " -- f(" << func << "): " << *funcRes << "\n";
-            mx->unlock();
+        if (manager->isComputationTerminated()) {
+            return {};
+        }
+
+        std::variant<HARD_FAIL, SOFT_FAIL, int> data;
+        void* buffer = static_cast<void*>(&data);
+        bool flag = ReadFile(
+                *pipe,
+                buffer, // the data from the pipe will be put here
+                sizeof(data), // number of bytes allocated
+                nullptr, // number of bytes actually read
+                nullptr // not using overlapped IO
+        );
+        if (!flag) {
+            std::cerr << "[M] Failed to read data from named pipe.\n";
+            throw std::runtime_error("");
+        }
+        auto* funcRes = static_cast<std::variant<HARD_FAIL, SOFT_FAIL, int>*>(buffer);
+        mx->lock();
+        if (!manager->isTerminated) {
+            std::cout << " -- " << func << "(x): " << *funcRes << "\n";
             if (std::holds_alternative<HARD_FAIL>(*funcRes) || std::holds_alternative<SOFT_FAIL>(*funcRes)) { // TODO: SOFT_FAIL
                 manager->terminateProcessAndPipe(func == 'f' ? 'g' : 'f');
             }
-            return *funcRes;
         }
-        return {};
+        mx->unlock();
+        return *funcRes;
     }
 
     void receiveResults() {
@@ -168,15 +170,23 @@ private:
         isTerminated = true;
         if (forFunc == 'f') {
             TerminateProcess(piF.hProcess, 1);
-            Computation comp('f', -1);
-            comp.connectToNamedPipe();
         }
         else { // forFunc == 'g'
             TerminateProcess(piG.hProcess, 1);
-            Computation comp('g', -1);
-            comp.connectToNamedPipe();
         }
 
+        std::string pipeName = std::string(R"(\\.\pipe\pipe_)") + forFunc;
+        char* c_pipeName = const_cast<char*>(pipeName.c_str());
+
+        CreateFile(
+                c_pipeName,
+                GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                nullptr,
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                nullptr
+        );
     }
 
     void closeHandles() {
