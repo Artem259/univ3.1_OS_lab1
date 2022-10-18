@@ -10,5 +10,6 @@ add_executable(univ3_1_OS_lab1
         #test.cpp
         Manager.hpp
         Computation.hpp
+        Service.hpp
         src/compfuncs.hpp
         src/trialfuncs.hpp)
