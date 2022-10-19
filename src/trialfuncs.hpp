@@ -9,6 +9,7 @@
 #include <thread>
 #include <optional>
 #include <condition_variable>
+#include <cmath>
 
 
 # ifdef __GNUG__
@@ -26,6 +27,8 @@ namespace os::lab1::compfuncs {
 
     template<typename T>
     using case_attribs = pair<duration, optional<T>>;
+
+/*
 
     //template<typename T> comp_result<T> gen_func(optional<pair<duration, T>> attribs) {
     template<typename T> comp_result<T> gen_func(optional<case_attribs<T>> attribs) {
@@ -92,6 +95,51 @@ namespace os::lab1::compfuncs {
     typename op_group_traits<O>::result_type trial_g(int case_nr) {
 	return gen_func<typename op_group_traits<O>::value_type>(op_group_trial_traits<O>::cases[case_nr].g_attrs);
     }
+
+*/
+
+    int getDigitOfNumber(int num, int d) {
+        int p = static_cast<int>(pow(10,d));
+        num = num - (num % p);
+        num = num / p;
+        num = num % 10;
+        return num;
+    }
+
+    template<op_group O>
+    typename op_group_traits<O>::result_type functionsBehaviour(int v, int t) {
+        v = v % 4;
+        std::this_thread::sleep_for(std::chrono::seconds(t));
+        switch (v) {
+            case 0: return t;
+            case 1: return soft_fail{};
+            case 2: return hard_fail{};
+            default: {
+                std::condition_variable cv;
+                std::mutex m;
+                std::unique_lock<std::mutex> lock(m);
+                cv.wait(lock, []{return false;});
+                return {};
+            }
+        }
+    }
+
+    // v*t*
+    template<op_group O>
+    typename op_group_traits<O>::result_type trial_f(int x) {
+        int v = getDigitOfNumber(x, 3);
+        int t = getDigitOfNumber(x, 1);
+        return functionsBehaviour<O>(v,t);
+    }
+
+    // *v*t
+    template<op_group O>
+    typename op_group_traits<O>::result_type trial_g(int x) {
+        int v = getDigitOfNumber(x, 2);
+        int t = getDigitOfNumber(x, 0);
+        return functionsBehaviour<O>(v,t);
+    }
+
 }
 
 #endif // _OS_LAB1_PROBEFUNCS_H
