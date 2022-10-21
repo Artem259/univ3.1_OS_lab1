@@ -6,11 +6,11 @@
 int main(int argc, char *argv[])
 {
     if (argc == 1) {
-        //while (true) {
-            Manager m(argv[0]);
+        while (true) {
+            Manager m(argv[0], 4);
             m.run();
-        //    std::cout << "\n";
-        //}
+            std::cout << "\n";
+        }
     }
     else {
         std::string argvStrings[] = {argv[0], argv[1], argv[2]};
