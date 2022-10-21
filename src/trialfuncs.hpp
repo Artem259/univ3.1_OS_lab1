@@ -10,6 +10,8 @@
 #include <optional>
 #include <condition_variable>
 #include <cmath>
+#include <random>
+
 
 
 # ifdef __GNUG__
@@ -112,7 +114,15 @@ namespace os::lab1::compfuncs {
         std::this_thread::sleep_for(std::chrono::seconds(t));
         switch (v) {
             case 0: return t;
-            case 1: return soft_fail{};
+            case 1: {
+                std::random_device r;
+                std::mt19937 e(r());
+                std::uniform_int_distribution<int> uniform_dist(0, 3);
+                if (!uniform_dist(e)) {
+                    return t;
+                }
+                return soft_fail{};
+            }
             case 2: return hard_fail{};
             default: {
                 std::condition_variable cv;
